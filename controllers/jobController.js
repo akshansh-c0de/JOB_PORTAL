@@ -1,95 +1,79 @@
 import Job from '../models/jobModel.js';
 import ErrorHandler from '../utils/errorHandler.js';
 
-/**
- * Get all the jobs from the database
- * Supports searching by keyword and location
- */
+// Get all jobs with optional searching and pagination
 export const getAllJobs = async (req, res, next) => {
   try {
-    const { keyword, location, page, limit } = req.query;
+    const { keyword, location, page = 1, limit = 10 } = req.query;
 
-    // This object will hold our search filters
-    const filterOptions = {};
+    // Search query object
+    let queryObj = {};
 
-    // Searching for keywords in job titles (case-insensitive)
+    // If user provides a keyword, we search for it in the Job Title (case-insensitive)
     if (keyword) {
-      filterOptions.title = { $regex: keyword, $options: 'i' };
+      queryObj.title = { $regex: keyword, $options: 'i' };
     }
 
-    // Filtering by location name
+    // If user provides a location filter
     if (location) {
-      filterOptions.location = { $regex: location, $options: 'i' };
+      queryObj.location = { $regex: location, $options: 'i' };
     }
 
-    // Pagination setup
-    const currentPage = Number(page) || 1;
-    const itemsPerPage = Number(limit) || 10;
-    const skipItems = (currentPage - 1) * itemsPerPage;
+    // Pagination logic
+    const skipAmount = (page - 1) * limit;
 
-    // Fetching the jobs with sorting and pagination
-    const allJobs = await Job.find(filterOptions)
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 }) // -1 means descending (latest first)
-      .skip(skipItems)
-      .limit(itemsPerPage);
+    const allJobs = await Job.find(queryObj)
+      .limit(limit)
+      .skip(skipAmount)
+      .sort({ createdAt: -1 }) // Show latest jobs first
+      .populate('createdBy', 'name email'); // Show name of the recruiter who posted it
 
-    // Counting total jobs to calculate total pages
-    const totalJobsCount = await Job.countDocuments(filterOptions);
+    // Count total jobs found (for frontend pagination UI)
+    const totalJobs = await Job.countDocuments(queryObj);
 
     res.status(200).json({
       success: true,
-      data: allJobs,
-      pagination: {
-        totalJobs: totalJobsCount,
-        totalPages: Math.ceil(totalJobsCount / itemsPerPage),
-        currentPage: currentPage
-      }
+      count: allJobs.length,
+      total: totalJobs,
+      data: allJobs
     });
-
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };
 
-/**
- * Get single job by its ID
- */
-export const getJobById = async (req, res, next) => {
-  try {
-    const jobId = req.params.id;
-    const jobData = await Job.findById(jobId).populate('createdBy', 'name email');
-
-    if (!jobData) {
-      return next(new ErrorHandler('Sorry, this job could not be found.', 404));
-    }
-
-    res.status(200).json({
-      success: true,
-      job: jobData,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Create a new job post (Recruiter only)
- */
+// Create a new Job (Only for recruiters)
 export const createJob = async (req, res, next) => {
   try {
-    // We attach the ID of the person creating the job (the logged-in recruiter)
-    const jobData = req.body;
-    jobData.createdBy = req.user.id;
+    // We get the recruiter's ID from req.user (which was added by our auth middleware)
+    req.body.createdBy = req.user.id;
 
-    const newJobCreated = await Job.create(jobData);
+    const newJob = await Job.create(req.body);
 
     res.status(201).json({
       success: true,
-      message: 'Job posted successfully!',
-      job: newJobCreated,
+      message: 'New job posted successfully!',
+      data: newJob
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Get details of a single job
+export const getJobById = async (req, res, next) => {
+  try {
+    const jobDetail = await Job.findById(req.params.id).populate('createdBy', 'name email');
+
+    if (!jobDetail) {
+      return next(new ErrorHandler('Sorry, this job was not found', 404));
+    }
+
+    res.status(200).json({
+      success: true,
+      data: jobDetail
+    });
+  } catch (err) {
+    next(err);
   }
 };

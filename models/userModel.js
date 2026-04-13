@@ -36,7 +36,8 @@ const userSchema = new mongoose.Schema({
 
 /**
  * Encrypting the password before saving to the database
- * We use 'pre-save' hook to hash the password so it's not stored in plain text
+ * Note: I decided to do this here in the model instead of the controller.
+ * It's much cleaner and ensures security every time a user is saved/updated.
  */
 userSchema.pre('save', async function (next) {
   // If the password hasn't changed, don't hash it again
